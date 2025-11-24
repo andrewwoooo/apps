@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MacFocus — 专注番茄钟</title>
+
+<!-- SheetJS：导出 Excel -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+  /* ---------------- 基本视觉（macOS 原生 App 风格）---------------- */
+  :root{
+    --bg: #f3f4f6;
+    --panel: #ffffff;
+    --muted: #8b8b90;
+    --text: #1b1b1f;
+    --accent-focus: #ff3b30;
+    --accent-break: #34c759;
+    --glass: rgba(255,255,255,0.65);
+    --radius: 16px;
+    --shadow-strong: 0 12px 40px rgba(16,24,40,0.12);
+    --shadow-soft: 0 6px 18px rgba(16,24,40,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root{
+      --bg: #111213;
+      --panel: #161617;
+      --muted: #9a9aa0;
+      --text: #f4f4f6;
+      --glass: rgba(255,255,255,0.03);
+      --shadow-strong: 0 10px 30px rgba(0,0,0,0.6);
+      --shadow-soft: 0 6px 18px rgba(0,0,0,0.45);
+    }
+  }
+
+  html,body{height:100%;margin:0;font-family: -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color:var(--text); background:var(--bg);}
+  .app-shell{max-width:1040px;margin:36px auto;padding:18px;background:linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.2));border-radius:20px;box-shadow:var(--shadow-strong);backdrop-filter: blur(6px);}
+
+  /* 顶部工具栏（App 风格） */
+  .topbar{display:flex;align-items:center;gap:14px;padding:8px 18px;border-radius:12px;margin-bottom:18px;}
+  .logo-wrap{display:flex;align-items:center;gap:10px;}
+  .app-logo{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#fff,#f6f6f8);border-radius:10px;box-shadow:var(--shadow-soft);border:1px solid rgba(0,0,0,0.04);}
+  .app-title{display:flex;flex-direction:column;}
+  .app-title .name{font-weight:700;font-size:16px;letter-spacing:0.2px;}
+  .app-title .tag{font-size:12px;color:var(--muted);margin-top:2px;}
+
+  .top-actions{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .icon-btn{border:0;background:transparent;padding:6px 10px;border-radius:10px;cursor:pointer;font-weight:600;color:var(--muted);}
+  .icon-btn:hover{background:rgba(0,0,0,0.03);color:var(--text);}
+
+  /* 主体布局：双列对齐 */
+  .main{display:grid;grid-template-columns: 420px 1fr;gap:20px;align-items:start;padding:6px 6px 22px 6px;}
+  @media (max-width:920px){ .main{grid-template-columns:1fr; padding:6px;} .app-shell{margin:18px;} .logo-wrap .app-title{display:none;} }
+
+  /* 计时卡片 */
+  .panel{background:var(--panel);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow-soft);border:1px solid rgba(0,0,0,0.03);}
+  .timer-card{display:flex;flex-direction:column;align-items:center;gap:14px;overflow:hidden;}
+  .status-badge{padding:6px 14px;border-radius:999px;font-weight:700;font-size:13px;}
+  .timer-display{font-size:84px;font-weight:300;font-variant-numeric:tabular-nums;letter-spacing:-4px;}
+  .controls{display:flex;gap:12px;width:100%;margin-top:6px;}
+  .controls button{flex:1;padding:12px;border-radius:12px;font-weight:800;font-size:15px;cursor:pointer;border:0}
+  .btn-primary{background:var(--text);color:var(--panel)}
+  .btn-pause{background:#ffcc00;color:#000}
+  .btn-ghost{background:transparent;border:1px solid rgba(0,0,0,0.06);color:var(--text);min-width:90px}
+
+  .settings{display:flex;gap:12px;margin-top:10px;width:100%;}
+  .input-group{flex:1;display:flex;flex-direction:column;}
+  .input-group label{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .input-group input{padding:10px;border-radius:10px;border:0;background:var(--glass);font-weight:700;text-align:center}
+
+  .small-note{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+
+  /* 记录卡 */
+  .records{display:flex;flex-direction:column;gap:10px;height:460px}
+  .records .head{display:flex;align-items:center;justify-content:space-between}
+  .records .head h3{margin:0;font-size:16px}
+  .records .head .ops{display:flex;gap:8px}
+  .records .log-list{overflow:auto;border-radius:8px;padding:8px;background:linear-gradient(180deg, rgba(0,0,0,0.01), rgba(0,0,0,0.00))}
+  .log-item{display:flex;justify-content:space-between;padding:12px;border-bottom:1px solid rgba(0,0,0,0.03)}
+  .log-item .meta{color:var(--muted);font-size:13px}
+  .empty{padding:40px;text-align:center;color:var(--muted)}
+
+  /* 小窗模式暗示 */
+  .note-bar{display:flex;gap:8px;align-items:center;margin-top:auto;color:var(--muted);font-size:13px}
+
+  /* 微动画 */
+  button{transition:transform .12s ease, box-shadow .12s ease}
+  button:active{transform:scale(.98)}
+  .timer-display{transition:color .2s ease, transform .18s ease}
+</style>
+</head>
+
+<body>
+  <div class="app-shell">
+    <!-- 顶部工具栏 -->
+    <div class="topbar">
+      <div class="logo-wrap">
+        <div class="app-logo" aria-hidden="true">
+          <!-- 极简 MacFocus Logo：圆角方块 + 番茄计时器图形（SVG） -->
+          <svg width="28" height="28" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ff6b57"/>
+                <stop offset="1" stop-color="#ff3b30"/>
+              </linearGradient>
+              <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#fff"/>
+                <stop offset="1" stop-color="#fff" stop-opacity="0.85"/>
+              </linearGradient>
+            </defs>
+            <!-- 圆角背景 -->
+            <rect x="2" y="2" rx="10" ry="10" width="60" height="60" fill="url(#g1)"/>
+            <!-- 简洁表盘 -->
+            <circle cx="32" cy="34" r="16" fill="url(#g2)" opacity="0.9"/>
+            <rect x="31.2" y="18" width="2" height="8" rx="1" fill="#ff3b30"/>
+            <path d="M32 34 L42 34" stroke="#ff3b30" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div class="app-title">
+          <div class="name">MacFocus</div>
+          <div class="tag">专注 · 番茄钟</div>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button id="exportTopBtn" class="icon-btn">导出</button>
+        <button id="helpBtn" class="icon-btn">帮助</button>
+      </div>
+    </div>
+
+    <!-- 主体 -->
+    <div class="main">
+      <!-- 计时卡片 -->
+      <section class="panel timer-card" aria-label="计时器">
+        <button id="popupBtn" class="icon-btn" title="小窗模式" style="position:absolute;right:22px;top:22px">📱</button>
+        <div id="statusBadge" class="status-badge" style="color:var(--accent-focus);background:rgba(255,59,48,0.08)">专注中</div>
+
+        <div id="timerDisplay" class="timer-display" role="timer" aria-live="polite">25:00</div>
+
+        <div class="controls" role="group" aria-label="计时控制">
+          <button id="mainBtn" class="btn-primary">开始</button>
+          <button id="resetBtn" class="btn-ghost">重置</button>
+        </div>
+
+        <div class="settings" style="width:100%;">
+          <div class="input-group">
+            <label for="focusInput">专注（分钟）</label>
+            <input id="focusInput" type="number" min="1" max="180" value="25" />
+          </div>
+          <div class="input-group">
+            <label for="breakInput">休息（分钟）</label>
+            <input id="breakInput" type="number" min="1" max="60" value="5" />
+          </div>
+        </div>
+
+        <p class="small-note">提示：允许通知以获得桌面提醒。声音由浏览器播放（模拟 mac 风格）。</p>
+      </section>
+
+      <!-- 记录卡片 -->
+      <aside class="panel records" aria-label="记录">
+        <div class="head">
+          <h3>专注记录</h3>
+          <div class="ops">
+            <button id="exportBtn" class="icon-btn">导出 Excel</button>
+            <button id="clearBtn" class="icon-btn">清空</button>
+          </div>
+        </div>
+
+        <div id="logList" class="log-list" role="list" aria-live="polite">
+          <!-- 列表项由 JS 填充 -->
+        </div>
+
+        <div class="note-bar">
+          <span>📦 已存储于本地 · 可导出为 Excel</span>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ===== DOM =====
+  const focusInput = document.getElementById('focusInput');
+  const breakInput = document.getElementById('breakInput');
+  const mainBtn = document.getElementById('mainBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const timerDisplay = document.getElementById('timerDisplay');
+  const statusBadge = document.getElementById('statusBadge');
+  const logList = document.getElementById('logList');
+  const clearBtn = document.getElementById('clearBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const exportTopBtn = document.getElementById('exportTopBtn');
+  const popupBtn = document.getElementById('popupBtn');
+  const helpBtn = document.getElementById('helpBtn');
+
+  // ===== 状态 & 设置 =====
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      audioCtx = new C();
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+    } else if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(()=>{});
+    }
+    return audioCtx;
+  }
+
+  let focusMinutes = parseInt(localStorage.getItem('setting_focus') || '25', 10);
+  let breakMinutes = parseInt(localStorage.getItem('setting_break') || '5', 10);
+
+  focusInput.value = focusMinutes;
+  breakInput.value = breakMinutes;
+
+  let focusDuration = focusMinutes * 60;
+  let breakDuration = breakMinutes * 60;
+  let timeLeft = focusDuration;
+  let timerId = null;
+  let isRunning = false;
+  let isFocusMode = true;
+
+  // ===== 音效（mac 风格） =====
+  function playStartBeep() {
+    const ctx = ensureAudio(); if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, t);
+    osc.frequency.linearRampToValueAtTime(660, t + 0.12);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.14, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.16);
+  }
+
+  function playEndBeep() {
+    const ctx = ensureAudio(); if (!ctx) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.24);
+  }
+
+  // ===== 时间显示 =====
+  function fmt(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+  function renderTime() {
+    timerDisplay.textContent = fmt(timeLeft);
+    if (isRunning) document.title = `${fmt(timeLeft)} · MacFocus`;
+    else document.title = 'MacFocus';
+  }
+
+  function updateBadge() {
+    if (isFocusMode) {
+      statusBadge.textContent = '专注中';
+      statusBadge.style.color = 'var(--accent-focus)';
+      statusBadge.style.background = 'rgba(255,59,48,0.08)';
+    } else {
+      statusBadge.textContent = '休息中';
+      statusBadge.style.color = 'var(--accent-break)';
+      statusBadge.style.background = 'rgba(52,199,89,0.08)';
+    }
+  }
+
+  // ===== 日志（带日期） =====
+  function saveLog() {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const logs = JSON.parse(localStorage.getItem('pomodoro_logs') || '[]');
+    logs.unshift({
+      date: dateStr,
+      time: timeStr,
+      duration: focusDuration / 60
+    });
+    localStorage.setItem('pomodoro_logs', JSON.stringify(logs));
+    renderLogs();
+  }
+
+  function renderLogs() {
+    const logs = JSON.parse(localStorage.getItem('pomodoro_logs') || '[]');
+    logList.innerHTML = '';
+    if (logs.length === 0) {
+      const div = document.createElement('div');
+      div.className = 'empty';
+      div.textContent = '还没有记录';
+      logList.appendChild(div);
+      return;
+    }
+    logs.forEach(l => {
+      const item = document.createElement('div');
+      item.className = 'log-item';
+      item.innerHTML = `<div><strong>🍅 专注 ${l.duration} 分钟</strong><div class="meta">${l.date} · ${l.time}</div></div><div class="meta">${l.date}</div>`;
+      logList.appendChild(item);
+    });
+  }
+
+  // ===== 导出 Excel（包含 日期、时间、时长） =====
+  function exportLogsToExcel() {
+    const logs = JSON.parse(localStorage.getItem('pomodoro_logs') || '[]');
+    if (!logs.length) {
+      alert('没有可导出的记录');
+      return;
+    }
+    const data = logs.map(l => ({
+      '日期': l.date,
+      '时间': l.time,
+      '专注时长（分钟）': l.duration
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    // 设置列宽（美观）
+    const wscols = [{wpx:90},{wpx:80},{wpx:120}];
+    ws['!cols'] = wscols;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '专注记录');
+    XLSX.writeFile(wb, `macfocus_records_${(new Date()).toISOString().slice(0,10)}.xlsx`);
+  }
+
+  // ===== 定时器行为 =====
+  function startTimer() {
+    ensureAudio();
+    playStartBeep();
+    if (isRunning) return;
+    isRunning = true;
+    mainBtn.textContent = '暂停';
+    mainBtn.className = 'btn-pause';
+    timerId = setInterval(() => {
+      timeLeft--;
+      renderTime();
+      if (timeLeft <= 0) {
+        finishSession();
+      }
+    }, 1000);
+  }
+
+  function pauseTimer() {
+    if (!isRunning) return;
+    isRunning = false;
+    clearInterval(timerId);
+    mainBtn.textContent = '继续';
+    mainBtn.className = 'btn-primary';
+  }
+
+  function resetTimer() {
+    isRunning = false;
+    clearInterval(timerId);
+    isFocusMode = true;
+    timeLeft = focusDuration;
+    mainBtn.textContent = '开始';
+    mainBtn.className = 'btn-primary';
+    updateBadge();
+    renderTime();
+  }
+
+  function finishSession() {
+    playEndBeep();
+    isRunning = false;
+    clearInterval(timerId);
+    if (isFocusMode) {
+      saveLog();
+      if (window.Notification && Notification.permission === 'granted') {
+        try { new Notification('专注完成！'); } catch(e) {}
+      }
+    }
+    isFocusMode = !isFocusMode;
+    timeLeft = isFocusMode ? focusDuration : breakDuration;
+    mainBtn.textContent = isFocusMode ? '开始专注' : '开始休息';
+    mainBtn.className = 'btn-primary';
+    updateBadge();
+    renderTime();
+  }
+
+  // ===== 事件绑定 =====
+  mainBtn.addEventListener('click', () => {
+    ensureAudio();
+    if (!isRunning) startTimer();
+    else pauseTimer();
+  });
+  resetBtn.addEventListener('click', resetTimer);
+
+  focusInput.addEventListener('change', () => {
+    let v = parseInt(focusInput.value || '25', 10);
+    if (isNaN(v) || v < 1) v = 1;
+    if (v > 180) v = 180;
+    focusInput.value = v;
+    focusMinutes = v;
+    focusDuration = v * 60;
+    localStorage.setItem('setting_focus', String(v));
+    resetTimer();
+  });
+
+  breakInput.addEventListener('change', () => {
+    let v = parseInt(breakInput.value || '5', 10);
+    if (isNaN(v) || v < 1) v = 1;
+    if (v > 60) v = 60;
+    breakInput.value = v;
+    breakMinutes = v;
+    breakDuration = v * 60;
+    localStorage.setItem('setting_break', String(v));
+    resetTimer();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    if (confirm('确认清空所有记录？')) {
+      localStorage.removeItem('pomodoro_logs');
+      renderLogs();
+    }
+  });
+
+  exportBtn.addEventListener('click', exportLogsToExcel);
+  exportTopBtn.addEventListener('click', exportLogsToExcel);
+
+  popupBtn.addEventListener('click', () => {
+    const w = 380, h = 560;
+    const left = Math.round((screen.width - w) / 2);
+    const top = Math.round((screen.height - h) / 2);
+    window.open(location.href, 'MacFocusPopup', `width=${w},height=${h},left=${left},top=${top},resizable=yes`);
+  });
+
+  helpBtn.addEventListener('click', () => {
+    alert('MacFocus · 使用说明：\n\n1) 设置专注/休息时长 → 点击开始。\n2) 专注完成后会自动记录（含日期/时间）。\n3) 点击导出即可下载 Excel 文件。\n\n（浏览器可能要求授权通知与声音播放）');
+  });
+
+  if (window.Notification && Notification.permission === 'default') {
+    Notification.requestPermission().catch(()=>{});
+  }
+
+  // ===== 初始化渲染 =====
+  function init() {
+    focusDuration = focusMinutes * 60;
+    breakDuration = breakMinutes * 60;
+    timeLeft = focusDuration;
+    renderTime();
+    updateBadge();
+    renderLogs();
+  }
+  init();
+
+  // 导出入口（便于调试）
+  window.MacFocus = {
+    startTimer, pauseTimer, resetTimer, finishSession, exportLogsToExcel
+  };
+
+})();
+</script>
+</body>
+</html>
